@@ -1,0 +1,5 @@
+requests
+beautifulsoup4
+pandas>=2.0
+trafilatura
+matplotlib
