@@ -17,8 +17,13 @@ MIN_WORDS = 50          # minimum body words. Document your final choice in the 
 MAX_BLOCKED = 5         # stop a source after this many 403/429 in a row
 MAX_NET_ERRORS = 25     # stop a source after this many network errors in a row
 
-# Who scrapes what (from the brief)
-MEMBERS = {1: ["dawn", "tribune"], 2: ["thenews", "geo"]}
+# Pakistani publishers are assigned to member 1; member 2 handles the remaining
+# Pakistani outlets and international publishers.
+MEMBERS = {
+    1: ["dawn", "tribune", "ary", "dailytimes", "pakobserver",
+        "propakistani", "app", "dailypakistan"],
+    2: ["thenews", "geo", "bbc", "dw", "guardian", "france24"],
+}
 
 # article_regex = pattern an article URL must match. VERIFY these with:
 #   python scrape_news.py --member 1 --discover-only
@@ -27,25 +32,133 @@ SOURCES = {
         "name": "Dawn",
         "host": "dawn.com",
         "sitemaps": ["https://www.dawn.com/feeds/sitemap"],
+        "rss_feeds": ["https://www.dawn.com/feeds/home",
+                      "https://www.dawn.com/feeds/latest-news"],
         "article_regex": r"/(news|latest-news|latest|archive)/\d+|/news/\d+",
     },
     "tribune": {
         "name": "The Express Tribune",
         "host": "tribune.com.pk",
         "sitemaps": ["https://tribune.com.pk/sitemap.xml", "https://tribune.com.pk/sitemap/latest-1.xml"],
+        "rss_feeds": ["https://tribune.com.pk/feed/latest"],
         "article_regex": r"/(story|blogs|videos)/\d+|/story/\d+",
     },
     "thenews": {
         "name": "The News International",
         "host": "thenews.com.pk",
         "sitemaps": ["https://www.thenews.com.pk/sitemap.xml"],
+        "rss_feeds": ["https://www.thenews.com.pk/rss/1/1",
+                      "https://www.thenews.com.pk/rss/1/2"],
         "article_regex": r"/(latest|print|latest-stories)/\d+|/latest/\d+|/latest/[^/]+/\d+",
     },
     "geo": {
         "name": "Geo News",
         "host": "geo.tv",
         "sitemaps": ["https://www.geo.tv/assets/uploads/google_news_latest.xml"],
+        "rss_feeds": ["https://www.geo.tv/rss/1/1"],
         "article_regex": r"/latest/\d+",
+    },
+    "ary": {
+        "name": "ARY News",
+        "host": "arynews.tv",
+        "base_url": "https://arynews.tv",
+        "sitemaps": [],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://arynews.tv/feed"],
+        "article_regex": r"/[^/?#]+/?$",
+    },
+    "dailytimes": {
+        "name": "Daily Times",
+        "host": "dailytimes.com.pk",
+        "base_url": "https://dailytimes.com.pk",
+        "sitemaps": ["https://dailytimes.com.pk/sitemap_index.xml"],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://dailytimes.com.pk/feed/"],
+        "article_regex": r"/\d+/",
+    },
+    "pakobserver": {
+        "name": "Pakistan Observer",
+        "host": "pakobserver.net",
+        "base_url": "https://pakobserver.net",
+        "sitemaps": ["https://pakobserver.net/sitemap_index.xml"],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://pakobserver.net/feed/"],
+        "article_regex": r"/[^/?#]+/?$",
+    },
+    "propakistani": {
+        "name": "ProPakistani",
+        "host": "propakistani.pk",
+        "base_url": "https://propakistani.pk",
+        "sitemaps": [],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://propakistani.pk/feed/"],
+        "article_regex": r"/\d{4}/\d{2}/\d{2}/",
+    },
+    "app": {
+        "name": "Associated Press of Pakistan",
+        "host": "app.com.pk",
+        "base_url": "https://www.app.com.pk",
+        "sitemaps": [],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://www.app.com.pk/feed/"],
+        "article_regex": r"/[^/]+/[^/]+/?$",
+    },
+    "dailypakistan": {
+        "name": "Daily Pakistan",
+        "host": "dailypakistan.com.pk",
+        "base_url": "https://en.dailypakistan.com.pk",
+        "sitemaps": [],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://en.dailypakistan.com.pk/feed"],
+        "article_regex": r"/\d{1,2}-[A-Za-z]{3}-\d{4}/[^/?#]+",
+    },
+    "bbc": {
+        "name": "BBC News",
+        "host": "bbc.co.uk",
+        "base_url": "https://www.bbc.co.uk",
+        "sitemaps": [
+            "https://www.bbc.co.uk/sitemaps/https-index-uk-news.xml",
+            "https://www.bbc.co.uk/sitemaps/https-index-uk-archive.xml",
+        ],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://feeds.bbci.co.uk/news/world/rss.xml"],
+        "article_regex": r"/news/(?:articles/[a-z0-9]+|[a-z0-9-]+)",
+    },
+    "dw": {
+        "name": "DW News",
+        "host": "dw.com",
+        "base_url": "https://www.dw.com",
+        "sitemaps": ["https://www.dw.com/en/news-sitemap.xml"],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://rss.dw.com/rdf/rss-en-all"],
+        "article_regex": r"/a-\d+",
+    },
+    "guardian": {
+        "name": "The Guardian",
+        "host": "theguardian.com",
+        "base_url": "https://www.theguardian.com",
+        "sitemaps": ["https://www.theguardian.com/sitemaps/news.xml"],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://www.theguardian.com/world/rss"],
+        "article_regex": r"/\d{4}/[a-z]{3}/\d{2}/",
+    },
+    "france24": {
+        "name": "France 24",
+        "host": "france24.com",
+        "base_url": "https://www.france24.com",
+        "sitemaps": ["https://www.france24.com/sitemaps/en/index.xml"],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://www.france24.com/en/rss"],
+        "article_regex": r"/\d{8}-",
+    },
+    "nhk": {
+        "name": "NHK World",
+        "host": "www3.nhk.or.jp",
+        "base_url": "https://www3.nhk.or.jp",
+        "sitemaps": [],
+        "discover_sitemaps": False,
+        "rss_feeds": ["https://www3.nhk.or.jp/rss/news/cat0.xml"],
+        "article_regex": r"/news/html/\d{8}/k\d+\.html",
     },
 }
 
@@ -57,6 +170,18 @@ SOURCE_ALIASES = {
     "the news international": "The News International", "the news": "The News International",
     "thenews.com.pk": "The News International",
     "geo news": "Geo News", "geo.tv": "Geo News", "geo": "Geo News",
+    "ary news": "ARY News", "arynews.tv": "ARY News",
+    "daily times": "Daily Times", "dailytimes.com.pk": "Daily Times",
+    "pakistan observer": "Pakistan Observer", "pakobserver.net": "Pakistan Observer",
+    "propakistani": "ProPakistani", "propakistani.pk": "ProPakistani",
+    "associated press of pakistan": "Associated Press of Pakistan", "app.com.pk": "Associated Press of Pakistan",
+    "daily pakistan": "Daily Pakistan", "dailypakistan.com.pk": "Daily Pakistan",
+    "bbc": "BBC News", "bbc news": "BBC News", "bbc.co.uk": "BBC News",
+    "dw": "DW News", "dw news": "DW News", "dw.com": "DW News",
+    "the guardian": "The Guardian", "guardian": "The Guardian",
+    "theguardian.com": "The Guardian",
+    "france 24": "France 24", "france24.com": "France 24",
+    "nhk": "NHK World", "nhk world": "NHK World", "nhk.or.jp": "NHK World",
 }
 
 # ---------------- Labelling rules (baseline / weak labels) ----------------

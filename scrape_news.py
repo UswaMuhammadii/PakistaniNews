@@ -1,5 +1,5 @@
 """
-Polite, restartable, sitemap-based news scraper.
+Polite, restartable, sitemap- and RSS-based news scraper.
 
 Examples:
   python scrape_news.py --member 1 --discover-only          # check sitemaps first
@@ -90,48 +90,100 @@ def parse_sitemap_bytes(content):
     return ("index" if tag(root) == "sitemapindex" else "urls"), items
 
 
+def parse_feed_bytes(content, host, article_pattern):
+    """Return matching article links from an RSS or Atom feed."""
+    root = ET.fromstring(content)
+    links = []
+    for item in root.iter():
+        if item.tag.split("}")[-1].lower() not in ("item", "entry"):
+            continue
+        for element in item.iter():
+            if element.tag.split("}")[-1].lower() != "link":
+                continue
+            link = (element.get("href") or element.text or "").strip()
+            parsed = urlparse(link)
+            if (parsed.scheme in ("http", "https")
+                    and (parsed.hostname == host or (parsed.hostname or "").endswith("." + host))
+                    and article_pattern.search(link)):
+                links.append(canonical_url(link))
+    return list(dict.fromkeys(links))
+
+
 def discover(session, key, cfg, rp, since, max_urls, rediscover):
     cache = config.INTERIM_DIR / f"{key}_urls.txt"
     if cache.exists() and not rediscover:
         urls = [l.strip() for l in cache.read_text(encoding="utf-8").splitlines() if l.strip()]
         log.info("[%s] loaded %d cached URLs (use --rediscover to refresh)", key, len(urls))
-        return urls
+    else:
+        pattern = re.compile(cfg["article_regex"])
+        discovered_sitemaps = (rp.site_maps() or []
+                               if cfg.get("discover_sitemaps", True) else [])
+        queue = list(dict.fromkeys(discovered_sitemaps + cfg["sitemaps"]))
+        seen, found = set(), {}
+        while queue and len(found) < max_urls:
+            sm = queue.pop(0)
+            if sm in seen:
+                continue
+            seen.add(sm)
+            if not rp.can_fetch(config.USER_AGENT, sm):
+                log.warning("[%s] robots.txt disallows sitemap %s", key, sm)
+                continue
+            try:
+                r = session.get(sm, timeout=config.TIMEOUT)
+                if r.status_code != 200:
+                    log.warning("[%s] sitemap %s -> HTTP %s", key, sm, r.status_code)
+                    continue
+                kind, items = parse_sitemap_bytes(r.content)
+            except (requests.RequestException, ET.ParseError, OSError, ValueError) as e:
+                log.warning("[%s] sitemap failed %s: %s", key, sm, e)
+                continue
+            if kind == "index":
+                queue.extend(loc for loc, _ in items)
+            else:
+                for loc, lastmod in items:
+                    parsed = urlparse(loc)
+                    if (parsed.hostname != cfg["host"]
+                            and not (parsed.hostname or "").endswith("." + cfg["host"])):
+                        continue
+                    if not pattern.search(loc):
+                        continue
+                    if since and lastmod and lastmod[:4].isdigit() and int(lastmod[:4]) < since:
+                        continue
+                    found[canonical_url(loc)] = lastmod
+            log.info("[%s] sitemaps read: %d | article URLs found: %d", key, len(seen), len(found))
+            time.sleep(1.0)
+        urls = list(found)
 
     pattern = re.compile(cfg["article_regex"])
-    queue = list(dict.fromkeys((rp.site_maps() or []) + cfg["sitemaps"]))
-    seen, found = set(), {}
-    while queue and len(found) < max_urls:
-        sm = queue.pop(0)
-        if sm in seen:
-            continue
-        seen.add(sm)
-        if not rp.can_fetch(config.USER_AGENT, sm):
-            log.warning("[%s] robots.txt disallows sitemap %s", key, sm)
+    rss_urls = []
+    feed_robots = {}
+    for feed in cfg.get("rss_feeds", []):
+        feed_parts = urlparse(feed)
+        feed_origin = f"{feed_parts.scheme}://{feed_parts.netloc}"
+        primary_parts = urlparse(
+            cfg.get("base_url") or "https://" + urlparse(cfg["sitemaps"][0]).netloc)
+        if feed_origin not in feed_robots:
+            feed_robots[feed_origin] = (
+                rp if feed_origin == f"{primary_parts.scheme}://{primary_parts.netloc}"
+                else load_robots(session, feed_origin)
+            )
+        if not feed_robots[feed_origin].can_fetch(config.USER_AGENT, feed):
+            log.warning("[%s] robots.txt disallows RSS feed %s", key, feed)
             continue
         try:
-            r = session.get(sm, timeout=config.TIMEOUT)
+            r = session.get(feed, timeout=config.TIMEOUT)
             if r.status_code != 200:
-                log.warning("[%s] sitemap %s -> HTTP %s", key, sm, r.status_code)
+                log.warning("[%s] RSS feed %s -> HTTP %s", key, feed, r.status_code)
                 continue
-            kind, items = parse_sitemap_bytes(r.content)
-        except Exception as e:
-            log.warning("[%s] sitemap failed %s: %s", key, sm, e)
-            continue
-        if kind == "index":
-            queue.extend(loc for loc, _ in items)
-        else:
-            for loc, lastmod in items:
-                if config.SOURCES[key]["host"] not in urlparse(loc).netloc:
-                    continue
-                if not pattern.search(loc):
-                    continue
-                if since and lastmod and lastmod[:4].isdigit() and int(lastmod[:4]) < since:
-                    continue
-                found[canonical_url(loc)] = lastmod
-        log.info("[%s] sitemaps read: %d | article URLs found: %d", key, len(seen), len(found))
+            feed_urls = parse_feed_bytes(r.content, cfg["host"], pattern)
+            rss_urls.extend(feed_urls)
+            log.info("[%s] RSS feed %s | article URLs found: %d",
+                     key, feed, len(feed_urls))
+        except (requests.RequestException, ET.ParseError, OSError, ValueError) as e:
+            log.warning("[%s] RSS feed failed %s: %s", key, feed, e)
         time.sleep(1.0)
 
-    urls = list(found)
+    urls = list(dict.fromkeys(urls + rss_urls))
     config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
     cache.write_text("\n".join(urls), encoding="utf-8")
     return urls
@@ -174,7 +226,7 @@ def load_attempted(path):
 
 def crawl_source(session, key, args, raw_path):
     cfg = config.SOURCES[key]
-    base = "https://" + urlparse(cfg["sitemaps"][0]).netloc
+    base = cfg.get("base_url") or "https://" + urlparse(cfg["sitemaps"][0]).netloc
     rp = load_robots(session, base)
     if rp.disallow_all:
         log.error("[%s] robots.txt forbids crawling. Skipping this source.", key)
